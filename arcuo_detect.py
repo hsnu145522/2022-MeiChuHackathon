@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import cv2.aruco as aruco
 import glob
+import argparse
 
 
 
@@ -91,17 +92,17 @@ def CalibrateCamera():
     ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None)
     return ret, mtx, dist, rvecs, tvecs
 
-def main():
+def main(isvideo):
 
     cap = cv2.VideoCapture(1)
     ret, mtx, dist, rvecs, tvecs = CalibrateCamera()
 
     # todo; change imgAug, maybe change it to augmentAruco.
-    #imgAug = cv2.imread('arrow.png')
-    #isVideo=False
+    imgAug = cv2.imread('./images/23.png')
+    isVideo=isvideo
     # for augumenting video
-    imgAug = cv2.VideoCapture('video.mp4')
-    isVideo = True
+    if isVideo:
+        imgAug = cv2.VideoCapture('video.mp4')
     detection = False
     framecounter = 0
     ###------------------ ARUCO TRACKER ---------------------------
@@ -156,8 +157,9 @@ def main():
             #(rvec-tvec).any() # get rid of that nasty numpy value array error
 
             #for i in range(0, ids.size):
-                # draw axis for the aruco markers
+                #draw axis for the aruco markers
                 #cv2.drawFrameAxes(frame, mtx, dist, rvec[i], tvec[i], 0.1)
+                #print(rvec[i], tvec[i])
 
             # draw a square around the markers
             aruco.drawDetectedMarkers(frame, corners)
@@ -166,9 +168,14 @@ def main():
                 for bbox, id in zip(corners, ids):
                     frame = augmentAruco(bbox, id, frame, imgVideo,isVideo=isVideo)             
 
-            else:                   
+            else:
+                idlist = [23,40,62,98,124]                   
                 for bbox, id in zip(corners, ids):
+                    if id not in idlist:
+                        continue
+                    imgAug = cv2.imread(f'./images/{int(id)}.png')
                     frame = augmentAruco(bbox, id, frame, imgAug)
+                    pass
             # code to show ids of the marker found
             # strg = ''
             # for i in range(0, ids.size):
@@ -195,4 +202,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--video","-v",action="store_true")
+    args = parser.parse_args()
+    isVideo = False
+    if(args.video):
+        isVideo = True
+    main(isvideo = isVideo)
