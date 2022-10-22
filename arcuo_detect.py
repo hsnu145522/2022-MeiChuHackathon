@@ -5,25 +5,50 @@ import glob
 
 
 
-def augmentAruco(bbox, id, img, imgAug, drawId=True):
-    tl = bbox[0][0][0], bbox[0][0][1]
-    tr = bbox[0][1][0], bbox[0][1][1]
-    br = bbox[0][2][0], bbox[0][2][1]
-    bl = bbox[0][3][0], bbox[0][3][1]
+def augmentAruco(bbox, id, img, imgAug, drawId=True, isVideo=False):
+    if not(isVideo):
+        pass
+        tl = bbox[0][0][0], bbox[0][0][1]
+        tr = bbox[0][1][0], bbox[0][1][1]
+        br = bbox[0][2][0], bbox[0][2][1]
+        bl = bbox[0][3][0], bbox[0][3][1]
 
-    h, w, c = imgAug.shape
+        h, w, c = imgAug.shape
 
-    pts1 = np.array([tl, tr, br, bl])
-    pts2 = np.float32([[0,0], [w,0], [w,h], [0,h]])
+        pts1 = np.array([tl, tr, br, bl])
+        pts2 = np.float32([[0,0], [w,0], [w,h], [0,h]])
 
-    matrix, _ = cv2.findHomography(pts2, pts1)
-    imgOut = cv2.warpPerspective(imgAug, matrix, (img.shape[1], img.shape[0]))
-    cv2.fillConvexPoly(img, pts1.astype(int), (0,0,0))
-    imgOut = img+imgOut
-    if drawId:
-        cv2.putText(imgOut, str(id), (int(tl[0]),int(tl[1])), cv2.FONT_HERSHEY_PLAIN, 2, (255,0,255), 2)
+        matrix, _ = cv2.findHomography(pts2, pts1)
+        imgOut = cv2.warpPerspective(imgAug, matrix, (img.shape[1], img.shape[0]))
+        cv2.fillConvexPoly(img, pts1.astype(int), (0,0,0))
+        imgOut = img+imgOut
+        if drawId:
+            cv2.putText(imgOut, str(id), (int(tl[0]),int(tl[1])), cv2.FONT_HERSHEY_PLAIN, 2, (255,0,255), 2)
 
-    return imgOut
+        return imgOut
+    
+    else:
+        # augmenting Video.
+        tl = bbox[0][0][0], bbox[0][0][1]
+        tr = bbox[0][1][0], bbox[0][1][1]
+        br = bbox[0][2][0], bbox[0][2][1]
+        bl = bbox[0][3][0], bbox[0][3][1]
+
+        imgAug = cv2.resize(imgAug, (380,380))
+
+        h, w, c = imgAug.shape
+        pts1 = np.array([tl, tr, br, bl])
+        pts2 = np.float32([[0,0], [w,0], [w,h], [0,h]])
+
+        matrix, _ = cv2.findHomography(pts2, pts1)
+        imgOut = cv2.warpPerspective(imgAug, matrix, (img.shape[1], img.shape[0]))
+        #imgOut = cv2.warpPerspective(imgAug, matrix, (wT, hT))
+        
+        cv2.fillConvexPoly(img, pts1.astype(int), (0,0,0))
+        imgOut = img+imgOut
+        if drawId:
+            cv2.putText(imgOut, str(id), (int(tl[0]),int(tl[1])), cv2.FONT_HERSHEY_PLAIN, 2, (255,0,255), 2)
+        return imgOut
 
 
 def CalibrateCamera():
@@ -70,12 +95,21 @@ def main():
 
     cap = cv2.VideoCapture(1)
     ret, mtx, dist, rvecs, tvecs = CalibrateCamera()
-    imgAug = cv2.imread(glob.glob('calib_images/checkerboard/left01.jpg')[0])
 
+    # todo; change imgAug, maybe change it to augmentAruco.
+    #imgAug = cv2.imread('arrow.png')
+    #isVideo=False
+    # for augumenting video
+    imgAug = cv2.VideoCapture('video.mp4')
+    isVideo = True
+    detection = False
+    framecounter = 0
     ###------------------ ARUCO TRACKER ---------------------------
     while (True):
+        
         ret, frame = cap.read()
         frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        
         #if ret returns false, there is likely a problem with the webcam/camera.
         #In that case uncomment the below line, which will replace the empty frame 
         #with a test image used in the opencv docs for aruco at https://www.docs.opencv.org/4.5.3/singlemarkersoriginal.jpg
@@ -96,11 +130,26 @@ def main():
 
         # font for displaying text (below)
         font = cv2.FONT_HERSHEY_SIMPLEX
-
+        
+        if np.all(ids != None):
+            detection = True
+        else:
+            detection = False
+        imgVideo = None
+        if isVideo and not(detection):
+            imgAug.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            framecounter = 0
+        elif isVideo and detection:
+            framecounter +=1
+            if framecounter == imgAug.get(cv2.CAP_PROP_FRAME_COUNT):
+                imgAug.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                framecounter = 0
+            success, imgVideo = imgAug.read()
+            
+            
         # check if the ids list is not empty
         # if no check is added the code will crash
         if np.all(ids != None):
-
             # estimate pose of each marker and return the values
             # rvet and tvec-different from camera coefficients
             rvec, tvec ,_ = aruco.estimatePoseSingleMarkers(corners, 0.05, mtx, dist)
@@ -113,8 +162,13 @@ def main():
             # draw a square around the markers
             aruco.drawDetectedMarkers(frame, corners)
 
-            for bbox, id in zip(corners, ids):
-                frame = augmentAruco(bbox, id, frame, imgAug)
+            if isVideo:
+                for bbox, id in zip(corners, ids):
+                    frame = augmentAruco(bbox, id, frame, imgVideo,isVideo=isVideo)             
+
+            else:                   
+                for bbox, id in zip(corners, ids):
+                    frame = augmentAruco(bbox, id, frame, imgAug)
             # code to show ids of the marker found
             # strg = ''
             # for i in range(0, ids.size):
@@ -124,8 +178,9 @@ def main():
 
 
         else:
+            detection = False
             # code to show 'No Ids' when no markers are found
-            cv2.putText(frame, "No Ids", (60,30), font, 1, (0,255,0),2,cv2.LINE_AA)
+            cv2.putText(frame, "No Marker Detected.", (60,30), font, 1, (0,255,0),2,cv2.LINE_AA)
 
         # display the resulting frame
         cv2.imshow('Augmented Reality',frame)
