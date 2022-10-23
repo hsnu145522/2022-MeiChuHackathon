@@ -5,10 +5,64 @@ import glob
 import argparse
 
 
+def augmentVideo(bboxs, ids, frame, imgAug, drawId=False):
+    tl = 0,0
+    tr = 0,0
+    bl = 0,0
+    br = 0,0
+    for bbox, id in zip(bboxs, ids):
+        if id==23:
+            tl = bbox[0][0][0], bbox[0][0][1]
+        if id==40:
+            tr = tr = bbox[0][1][0], bbox[0][1][1]
+        if id==62:
+            bl = bbox[0][3][0], bbox[0][3][1]
+        if id==98:
+            br = bbox[0][2][0], bbox[0][2][1]
+    #imgAug = cv2.resize(imgAug, (380,380))
+
+    h, w, c = imgAug.shape
+    pts1 = np.array([tl, tr, br, bl])
+    pts2 = np.float32([[0,0], [w,0], [w,h], [0,h]])
+
+    matrix, _ = cv2.findHomography(pts2, pts1)
+    imgOut = cv2.warpPerspective(imgAug, matrix, (frame.shape[1], frame.shape[0]))
+    #imgOut = cv2.warpPerspective(imgAug, matrix, (wT, hT))
+    
+    cv2.fillConvexPoly(frame, pts1.astype(int), (0,0,0))
+    imgOut = frame+imgOut
+    if drawId:
+        cv2.putText(imgOut, str(id), (int(tl[0]),int(tl[1])), cv2.FONT_HERSHEY_PLAIN, 2, (255,0,255), 2)
+    return imgOut
+    # Calculate Homography
+    h, status = cv2.findHomography(pts2, pts1)
+            
+    # Warp source image to destination based on homography
+    warped_image = cv2.warpPerspective(imgAug, h, (frame.shape[1],frame.shape[0]))
+            
+    # Prepare a mask representing region to copy from the warped image into the original frame.
+    mask = np.zeros([frame.shape[0], frame.shape[1]], dtype=np.uint8)
+    cv2.fillConvexPoly(mask, np.int32([pts2]), (255, 255, 255), cv2.LINE_AA)
+    
+    # Erode the mask to not copy the boundary effects from the warping
+    element = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+    mask = cv2.erode(mask, element, iterations=3)
+    
+    # Copy the mask into 3 channels.
+    warped_image = warped_image.astype(float)
+    mask3 = np.zeros_like(warped_image)
+    for i in range(0, 3):
+        mask3[:,:,i] = mask/255
+ 
+    # Copy the masked warped image into the original frame in the mask region.
+    warped_image_masked = cv2.multiply(warped_image, mask3)
+    frame_masked = cv2.multiply(frame.astype(float), 1-mask3)
+    imgOut = cv2.add(warped_image_masked, frame_masked)
+    return imgOut
+
 
 def augmentAruco(bbox, id, img, imgAug, drawId=True, isVideo=False):
     if not(isVideo):
-        pass
         tl = bbox[0][0][0], bbox[0][0][1]
         tr = bbox[0][1][0], bbox[0][1][1]
         br = bbox[0][2][0], bbox[0][2][1]
@@ -162,11 +216,12 @@ def main(isvideo):
                 #print(rvec[i], tvec[i])
 
             # draw a square around the markers
-            aruco.drawDetectedMarkers(frame, corners)
-
-            if isVideo:
+            #aruco.drawDetectedMarkers(frame, corners)
+            if len(ids)==4 and isVideo:
+                frame = augmentVideo(corners, ids, frame, imgVideo)
+            elif isVideo:
                 for bbox, id in zip(corners, ids):
-                    frame = augmentAruco(bbox, id, frame, imgVideo,isVideo=isVideo)             
+                    frame = augmentAruco(bbox, id, frame, imgVideo,isVideo=isVideo)           
 
             else:
                 idlist = [23,40,62,98,124]                   
